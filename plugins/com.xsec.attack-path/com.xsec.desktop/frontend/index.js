@@ -30,7 +30,10 @@ function displayIds(nodes,rootId){
   for(const node of nodes){if(!node.parent_id){ids.set(node.id,"Root");continue;}const kind=nodeKind(node,rootId);ids.set(node.id,`${kind[0].toUpperCase()}${kind.slice(1)}_${String(++counts[kind]).padStart(3,"0")}`);}
   return ids;
 }
-function subagentForNode(node,subagents){return subagents.find((candidate)=>candidate.id===node.subagent_id||candidate.node_id===node.id);}
+function subagentForNode(node,subagents){
+  const exact=node.subagent_id?subagents.find((candidate)=>candidate.id===node.subagent_id):undefined;
+  return exact??subagents.find((candidate)=>candidate.node_id===node.id);
+}
 function graphModel(nodes,subagents){
   const rootId=nodes.find((node)=>!node.parent_id)?.id??nodes[0]?.id,layout=layoutTreeNodes(nodes,rootId);
   const positioned=nodes.map((node)=>({node,...(layout.positions.get(node.id)??{x:PADDING,y:PADDING})})),positions=new Map(positioned.map((position)=>[position.node.id,position]));
@@ -94,8 +97,8 @@ class AttackPathController{
   buildShell(){
     installStyles();const shell=element("section","ap-root"),header=element("header","ap-head"),controls=element("span","ap-controls");shell.setAttribute("aria-label","攻击路径");
     this.status=element("span","ap-status");this.status.setAttribute("role","alert");this.retry=element("button","ap-retry hidden","重试");this.retry.type="button";this.retry.addEventListener("click",()=>this.retryLoad());this.legend=element("span","ap-legend");
-    controls.append(this.zoomButton("−","缩小测试树",()=>this.zoomTo(this.view.scale-ZOOM_STEP)),this.zoomButton("100%","重置测试树视图",()=>this.resetView()),this.zoomButton("+","放大测试树",()=>this.zoomTo(this.view.scale+ZOOM_STEP)));
-    header.append(element("span","ap-title","测试树"),this.status,this.retry,this.legend,controls);this.canvas=element("div","ap-canvas");this.installCanvasEvents();shell.append(header,this.canvas);this.root.replaceChildren(shell);
+    controls.append(this.zoomButton("−","缩小攻击路径",()=>this.zoomTo(this.view.scale-ZOOM_STEP)),this.zoomButton("100%","重置攻击路径视图",()=>this.resetView()),this.zoomButton("+","放大攻击路径",()=>this.zoomTo(this.view.scale+ZOOM_STEP)));
+    header.append(element("span","ap-title","攻击路径"),this.status,this.retry,this.legend,controls);this.canvas=element("div","ap-canvas");this.installCanvasEvents();shell.append(header,this.canvas);this.root.replaceChildren(shell);
     this.resizeObserver=typeof ResizeObserver==="function"?new ResizeObserver(()=>this.applyTransform()):null;this.resizeObserver?.observe(this.canvas);
   }
   retryLoad(){console.info("attack-path.retry.requested");void this.load(true);}
@@ -104,7 +107,7 @@ class AttackPathController{
     this.canvas.addEventListener("wheel",(event)=>this.onWheel(event),{passive:false});this.canvas.addEventListener("pointerdown",(event)=>this.startDrag(event));this.canvas.addEventListener("pointermove",(event)=>this.moveDrag(event));this.canvas.addEventListener("pointerup",(event)=>this.stopDrag(event));this.canvas.addEventListener("pointercancel",(event)=>this.stopDrag(event));
   }
   render(){
-    if(this.error)return this.renderEmpty("攻击路径暂时不可用",`读取插件数据失败：${this.error}`);if(!this.context.assignmentId)return this.renderEmpty("该 Agent 未绑定任务");if(this.loading&&!this.nodes.length)return this.renderEmpty("正在读取攻击路径","正在同步节点与子 Agent 状态…",true);if(!this.nodes.length)return this.renderEmpty("暂无测试树节点");this.renderGraph();
+    if(this.error)return this.renderEmpty("攻击路径暂时不可用",`读取插件数据失败：${this.error}`);if(!this.context.assignmentId)return this.renderEmpty("该 Agent 未绑定任务");if(this.loading&&!this.nodes.length)return this.renderEmpty("正在读取攻击路径","正在同步节点与子 Agent 状态…",true);if(!this.nodes.length)return this.renderEmpty("暂无攻击路径节点");this.renderGraph();
   }
   renderEmpty(title,description,loading=false){const empty=element("div","ap-empty");if(loading)empty.append(element("span","ap-loading"));empty.append(element("strong","",title));if(description)empty.append(element("span","",description));this.canvas.replaceChildren(empty);this.legend.replaceChildren();}
   renderGraph(){
