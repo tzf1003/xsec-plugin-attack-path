@@ -129,7 +129,7 @@ class AttackPathController{
   }
   async openSubagent(subagent,title){
     this.selectedSubagentId=subagent.id;this.renderGraph();console.info("attack-path.subagent.open.started");
-    try{await this.host.request(OPEN_TOOL_METHOD,{pluginId:SUBAGENT_PLUGIN_ID,toolId:SUBAGENT_DETAIL_TOOL_ID,entityId:subagent.id,title});console.info("attack-path.subagent.open.completed");this.showMessage();}catch(error){const message=error instanceof Error?error.message:String(error);console.error("attack-path.subagent.open.failed",{message});this.showMessage(`无法打开子 Agent：${message}`);}
+    try{await this.host.request(OPEN_TOOL_METHOD,{pluginId:SUBAGENT_PLUGIN_ID,toolId:SUBAGENT_DETAIL_TOOL_ID,entityId:subagent.id,title});console.info("attack-path.subagent.open.completed");if(!this.error)this.showMessage();}catch(error){const message=error instanceof Error?error.message:String(error);console.error("attack-path.subagent.open.failed",{message});if(!this.error)this.showMessage(`无法打开子 Agent：${message}`);}
   }
   showMessage(message,retry=false){this.status.textContent=message??"";this.status.title=message??"";this.status.classList.toggle("show",Boolean(message));this.retry.classList.toggle("hidden",!retry);}
   resetIfNeeded(){const key=`${this.context.assignmentId}:${this.model.rootId??""}:${this.nodes.length}`;if(key===this.resetKey)return this.applyTransform();this.resetKey=key;requestAnimationFrame(()=>this.resetView());}
