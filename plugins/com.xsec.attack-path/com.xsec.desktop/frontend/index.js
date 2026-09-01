@@ -141,4 +141,12 @@ class AttackPathController{
   moveDrag(event){if(!this.drag||this.drag.id!==event.pointerId)return;this.view={...this.drag.view,x:this.drag.view.x+event.clientX-this.drag.x,y:this.drag.view.y+event.clientY-this.drag.y};this.applyTransform();}
   stopDrag(event){if(!this.drag||this.drag.id!==event.pointerId)return;if(this.canvas.hasPointerCapture(event.pointerId))this.canvas.releasePointerCapture(event.pointerId);this.canvas.classList.remove("dragging");this.drag=null;}
 }
-export function activate(host){console.debug("attack-path.activate",{apiVersion:host.apiVersion});return new AttackPathController(host);}
+export function activate(host){
+  console.debug("attack-path.activate",{apiVersion:host.apiVersion});
+  const controller=new AttackPathController(host);
+  return{
+    async mount(root,context){await controller.mount(root,context);},
+    async update(context){await controller.update(context);},
+    async dispose(){await controller.dispose();},
+  };
+}
