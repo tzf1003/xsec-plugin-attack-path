@@ -118,6 +118,11 @@ input.on("line", async (line) => {
   let request;
   try {
     request = JSON.parse(line);
+  } catch {
+    process.stdout.write(`${response(null, null, { code: -32700, message: "Parse error" })}\n`);
+    return;
+  }
+  try {
     const result = await dispatch(request);
     if (request.id !== undefined) process.stdout.write(`${response(request.id, result)}\n`);
   } catch (error) {
