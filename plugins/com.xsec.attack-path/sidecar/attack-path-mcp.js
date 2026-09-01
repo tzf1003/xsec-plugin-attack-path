@@ -62,8 +62,12 @@ class JsonRpcError extends Error {
   }
 }
 
+function isJsonRpcRequestId(value) {
+  return typeof value === "string" || Number.isInteger(value);
+}
+
 function isJsonRpcId(value) {
-  return value === undefined || value === null || typeof value === "string" || typeof value === "number";
+  return value === undefined || value === null || isJsonRpcRequestId(value);
 }
 
 function isJsonRpcRequest(value) {
@@ -107,18 +111,19 @@ async function dispatch(request) {
   if (request.method === "notifications/initialized") return null;
   if (request.method === "notifications/cancelled") {
     const requestId = request.params?.requestId;
-    if (requestId !== undefined) activeRequests.get(String(requestId))?.abort();
+    if (requestId !== undefined) activeRequests.get(requestId)?.abort();
     return null;
   }
   if (request.method === "tools/list") return { tools: toolDescriptors() };
   if (request.method === "ping") return {};
   if (request.method !== "tools/call") throw new JsonRpcError(-32601, "Method not found");
+  if (!isJsonRpcRequestId(request.id)) throw new JsonRpcError(-32600, "Invalid Request");
   const name = request.params?.name;
   const args = request.params?.arguments === undefined ? {} : request.params.arguments;
   if (!tools.some(([tool]) => tool === name)) throw new Error(`unknown attack-path tool: ${name}`);
   if (args === null || typeof args !== "object" || Array.isArray(args)) throw new Error("tool arguments must be an object");
   const controller = new AbortController();
-  activeRequests.set(String(request.id), controller);
+  activeRequests.set(request.id, controller);
   try {
     const result = await hostCall(hostMethods[name], args, controller.signal);
     const structuredContent = structuredContentFor(name, result);
@@ -129,7 +134,7 @@ async function dispatch(request) {
     }
     throw error;
   } finally {
-    activeRequests.delete(String(request.id));
+    activeRequests.delete(request.id);
   }
 }
 
@@ -153,11 +158,15 @@ input.on("line", async (line) => {
     process.stdout.write(`${response(responseId(request), null, { code: -32600, message: "Invalid Request" })}\n`);
     return;
   }
+  if (request.method === "tools/call" && !isJsonRpcRequestId(request.id)) {
+    process.stdout.write(`${response(responseId(request), null, { code: -32600, message: "Invalid Request" })}\n`);
+    return;
+  }
   try {
     const result = await dispatch(request);
-    if (request.id !== undefined) process.stdout.write(`${response(request.id, result)}\n`);
+    if (isJsonRpcRequestId(request.id)) process.stdout.write(`${response(request.id, result)}\n`);
   } catch (error) {
-    if (request.id === undefined) return;
+    if (!isJsonRpcRequestId(request.id)) return;
     const code = error instanceof JsonRpcError ? error.code : -32000;
     process.stdout.write(`${response(request.id, null, { code, message: String(error.message || error) })}\n`);
   }
