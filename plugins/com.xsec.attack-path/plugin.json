@@ -7,7 +7,7 @@
     "engines": { "xsec": ">=0.1.0", "pluginApi": "^1.2.0" },
     "entrypoints": { "frontend": "./com.xsec.desktop/frontend/index.js" },
     "activationEvents": ["onWorkspaceTool:attack-path", "onAgentTool:xsec_tree_node_create"],
-    "permissions": { "workspace.session.read": {}, "workspace.project.write": {}, "agent.tools.register": {} },
+    "permissions": { "workspace.session.read": {}, "workspace.project.write": {}, "agent.tools.register": {}, "mcp.servers.register": {}, "native.execute": {} },
     "frontendApi": { "version": 2, "module": "single-esm", "methods": {
       "xsec.attack-path.tree.list": { "capability": "workspace.session.read", "binding": "context" },
       "xsec.attack-path.subagents.list": { "capability": "workspace.session.read", "binding": "context" }
@@ -32,8 +32,13 @@
         "xsec_subagent_complete": { "title": "完成子 Agent", "workspaceToolId": "attack-path" },
         "xsec_subagent_status": { "title": "子 Agent 状态", "workspaceToolId": "attack-path" },
         "plugin.attack-path.tree_node_create": { "title": "创建攻击路径节点", "workspaceToolId": "attack-path" },
-        "plugin.attack-path.tree_list": { "title": "列出攻击路径", "workspaceToolId": "attack-path" }
+        "plugin.attack-path.tree_list": { "title": "列出攻击路径", "workspaceToolId": "attack-path" },
+        "plugin.attack-path.node_create": { "title": "创建攻击路径节点（MCP）", "workspaceToolId": "attack-path" },
+        "plugin.attack-path.node_update": { "title": "更新攻击路径节点（MCP）", "workspaceToolId": "attack-path" },
+        "plugin.attack-path.node_get": { "title": "读取攻击路径节点（MCP）", "workspaceToolId": "attack-path" },
+        "plugin.attack-path.finding_add": { "title": "写入攻击路径漏洞（MCP）", "workspaceToolId": "attack-path" }
       }
     }
-  } }
+  }
+  }
 }
