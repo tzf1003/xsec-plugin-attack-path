@@ -82,7 +82,26 @@ function isJsonRpcRequest(value) {
 function responseId(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
   const { id } = value;
-  return id === null || typeof id === "string" || typeof id === "number" ? id : null;
+  return id === null || isJsonRpcRequestId(id) ? id : null;
+}
+
+function hasOwn(value, key) {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function isHostResponse(value, requestId) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  if (value.jsonrpc !== "2.0" || value.id !== requestId) return false;
+  const hasResult = hasOwn(value, "result");
+  const hasError = hasOwn(value, "error");
+  if (hasResult === hasError) return false;
+  if (hasResult) return true;
+  const error = value.error;
+  return error !== null
+    && typeof error === "object"
+    && !Array.isArray(error)
+    && Number.isInteger(error.code)
+    && typeof error.message === "string";
 }
 
 async function hostCall(method, params, signal) {
@@ -92,15 +111,17 @@ async function hostCall(method, params, signal) {
   if (!token) throw new Error("XSEC_ATTACK_PATH_HOST_TOKEN is not configured");
   const headers = { "content-type": "application/json" };
   headers.authorization = `Bearer ${token}`;
+  const requestId = Date.now();
   const result = await fetch(endpoint, {
     method: "POST",
     headers,
     signal,
-    body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }),
+    body: JSON.stringify({ jsonrpc: "2.0", id: requestId, method, params }),
   });
   if (!result.ok) throw new Error(`XSec Host RPC failed: HTTP ${result.status}`);
   const payload = await result.json();
-  if (payload.error) throw new HostDomainError(payload.error.message || "XSec Host RPC error");
+  if (!isHostResponse(payload, requestId)) throw new Error("XSec Host RPC returned an invalid JSON-RPC response");
+  if (hasOwn(payload, "error")) throw new HostDomainError(payload.error.message || "XSec Host RPC error");
   return payload.result;
 }
 
@@ -120,8 +141,8 @@ async function dispatch(request) {
   if (!isJsonRpcRequestId(request.id)) throw new JsonRpcError(-32600, "Invalid Request");
   const name = request.params?.name;
   const args = request.params?.arguments === undefined ? {} : request.params.arguments;
-  if (!tools.some(([tool]) => tool === name)) throw new Error(`unknown attack-path tool: ${name}`);
-  if (args === null || typeof args !== "object" || Array.isArray(args)) throw new Error("tool arguments must be an object");
+  if (!tools.some(([tool]) => tool === name)) throw new JsonRpcError(-32602, "Unknown attack-path tool");
+  if (args === null || typeof args !== "object" || Array.isArray(args)) throw new JsonRpcError(-32602, "Tool arguments must be an object");
   const controller = new AbortController();
   activeRequests.set(request.id, controller);
   try {
