@@ -54,6 +54,23 @@ class HostDomainError extends Error {
   }
 }
 
+class JsonRpcError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = "JsonRpcError";
+    this.code = code;
+  }
+}
+
+function isJsonRpcRequest(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value) && typeof value.method === "string";
+}
+
+function responseId(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value) || value.id === undefined) return null;
+  return value.id;
+}
+
 async function hostCall(method, params, signal) {
   const endpoint = process.env.XSEC_ATTACK_PATH_HOST_RPC;
   if (!endpoint) throw new Error("XSEC_ATTACK_PATH_HOST_RPC is not configured");
@@ -85,7 +102,7 @@ async function dispatch(request) {
   }
   if (request.method === "tools/list") return { tools: toolDescriptors() };
   if (request.method === "ping") return {};
-  if (request.method !== "tools/call") throw new Error(`unsupported MCP method: ${request.method}`);
+  if (request.method !== "tools/call") throw new JsonRpcError(-32601, "Method not found");
   const name = request.params?.name;
   const args = request.params?.arguments === undefined ? {} : request.params.arguments;
   if (!tools.some(([tool]) => tool === name)) throw new Error(`unknown attack-path tool: ${name}`);
@@ -122,10 +139,16 @@ input.on("line", async (line) => {
     process.stdout.write(`${response(null, null, { code: -32700, message: "Parse error" })}\n`);
     return;
   }
+  if (!isJsonRpcRequest(request)) {
+    process.stdout.write(`${response(responseId(request), null, { code: -32600, message: "Invalid Request" })}\n`);
+    return;
+  }
   try {
     const result = await dispatch(request);
     if (request.id !== undefined) process.stdout.write(`${response(request.id, result)}\n`);
   } catch (error) {
-    if (request?.id !== undefined) process.stdout.write(`${response(request.id, null, { code: -32000, message: String(error.message || error) })}\n`);
+    if (request.id === undefined) return;
+    const code = error instanceof JsonRpcError ? error.code : -32000;
+    process.stdout.write(`${response(request.id, null, { code, message: String(error.message || error) })}\n`);
   }
 });
