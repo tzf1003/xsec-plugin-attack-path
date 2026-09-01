@@ -18,16 +18,34 @@ function toolDescriptors() {
   return tools.map(([name, description]) => ({
     name,
     description,
-    inputSchema: { type: "object", additionalProperties: true },
+    inputSchema: inputSchemaFor(name),
   }));
+}
+
+function inputSchemaFor(name) {
+  const schemas = {
+    attack_path_node_create: {
+      properties: { parent_id: { type: "string" }, title: { type: "string" }, kind: { type: "string" }, target: { type: "string" }, test_value: { type: "string" }, brief: { type: "string" } },
+      required: ["title"],
+    },
+    attack_path_node_update: {
+      properties: { node_id: { type: "string" }, status: { type: "string" }, test_value: { type: "string" }, conclusion: { type: "string" }, subagent_id: { type: "string" }, expected_revision: { type: "integer" } },
+      required: ["node_id"],
+    },
+    attack_path_node_get: { properties: { node_id: { type: "string" } }, required: ["node_id"] },
+    attack_path_finding_add: { properties: { node_id: { type: "string" }, fingerprint: { type: "string" }, kind: { type: "string" }, severity: { type: "string" }, title: { type: "string" }, data: { type: "object" } }, required: ["fingerprint", "title"] },
+    attack_path_list: { properties: {} },
+  };
+  return { type: "object", additionalProperties: true, ...(schemas[name] || {}) };
 }
 
 async function hostCall(method, params) {
   const endpoint = process.env.XSEC_ATTACK_PATH_HOST_RPC;
   if (!endpoint) throw new Error("XSEC_ATTACK_PATH_HOST_RPC is not configured");
   const token = process.env.XSEC_ATTACK_PATH_HOST_TOKEN;
+  if (!token) throw new Error("XSEC_ATTACK_PATH_HOST_TOKEN is not configured");
   const headers = { "content-type": "application/json" };
-  if (token) headers.authorization = `Bearer ${token}`;
+  headers.authorization = `Bearer ${token}`;
   const result = await fetch(endpoint, {
     method: "POST",
     headers,
