@@ -30,13 +30,20 @@ function inputSchemaFor(name) {
     },
     attack_path_node_update: {
       properties: { node_id: { type: "string" }, status: { type: "string" }, test_value: { type: "string" }, conclusion: { type: "string" }, subagent_id: { type: "string" }, expected_revision: { type: "integer" } },
-      required: ["node_id"],
+      required: ["node_id", "expected_revision"],
     },
     attack_path_node_get: { properties: { node_id: { type: "string" } }, required: ["node_id"] },
     attack_path_finding_add: { properties: { node_id: { type: "string" }, fingerprint: { type: "string" }, kind: { type: "string" }, severity: { type: "string" }, title: { type: "string" }, data: { type: "object" } }, required: ["fingerprint", "title"] },
     attack_path_list: { properties: {} },
   };
   return { type: "object", additionalProperties: true, ...(schemas[name] || {}) };
+}
+
+class HostDomainError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "HostDomainError";
+  }
 }
 
 async function hostCall(method, params) {
@@ -53,7 +60,7 @@ async function hostCall(method, params) {
   });
   if (!result.ok) throw new Error(`XSec Host RPC failed: HTTP ${result.status}`);
   const payload = await result.json();
-  if (payload.error) throw new Error(payload.error.message || "XSec Host RPC error");
+  if (payload.error) throw new HostDomainError(payload.error.message || "XSec Host RPC error");
   return payload.result;
 }
 
@@ -63,13 +70,21 @@ async function dispatch(request) {
   }
   if (request.method === "notifications/initialized") return null;
   if (request.method === "tools/list") return { tools: toolDescriptors() };
+  if (request.method === "ping") return {};
   if (request.method !== "tools/call") throw new Error(`unsupported MCP method: ${request.method}`);
   const name = request.params?.name;
-  const args = request.params?.arguments;
+  const args = request.params?.arguments === undefined ? {} : request.params.arguments;
   if (!tools.some(([tool]) => tool === name)) throw new Error(`unknown attack-path tool: ${name}`);
-  if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("tool arguments must be an object");
-  const result = await hostCall(`xsec.attack-path.${name}`, args);
-  return { content: [{ type: "text", text: JSON.stringify(result ?? {}) }], structuredContent: result ?? {} };
+  if (args === null || typeof args !== "object" || Array.isArray(args)) throw new Error("tool arguments must be an object");
+  try {
+    const result = await hostCall(`xsec.attack-path.${name}`, args);
+    return { content: [{ type: "text", text: JSON.stringify(result ?? {}) }], structuredContent: result ?? {} };
+  } catch (error) {
+    if (error instanceof HostDomainError) {
+      return { content: [{ type: "text", text: String(error.message || error) }], isError: true };
+    }
+    throw error;
+  }
 }
 
 const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
