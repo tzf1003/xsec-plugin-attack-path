@@ -1,4 +1,6 @@
-const TREE_METHOD="xsec.attack-path.tree.list",SUBAGENTS_METHOD="xsec.attack-path.subagents.list",OPEN_TOOL_METHOD="xsec.workspace.tool.open";
+const TREE_METHOD="xsec.attack-path.tree.list";
+const SUBAGENTS_METHOD="xsec.attack-path.subagents.list";
+const OPEN_TOOL_METHOD="xsec.workspace.tool.open";
 const SUBAGENT_PLUGIN_ID="com.xsec.workspace.sub-agent",SUBAGENT_DETAIL_TOOL_ID="subagent-detail",SVG_NS="http://www.w3.org/2000/svg";
 const NODE_WIDTH=130,NODE_HEIGHT=58,X_GAP=150,Y_GAP=120,ROOT_GAP=80,PADDING=80;
 const MIN_SCALE=.45,MAX_SCALE=1.8,ZOOM_STEP=.1,POLL_INTERVAL_MS=2_000,ROOT_TOP_OFFSET=36;
@@ -63,35 +65,26 @@ function installStyles(){
   document.head.append(style);
 }
 
-class AttackPathController{
-  constructor(host){
-    this.host=host;this.context=workspaceContext();this.nodes=[];this.subagents=[];this.model=graphModel([],[]);this.view={x:32,y:40,scale:1};
+export function activate(host){
+  console.debug("attack-path.activate",{apiVersion:host.apiVersion});
+  class AttackPathController{
+  constructor(refresh){
+    this.refresh=refresh;this.context=workspaceContext();this.nodes=[];this.subagents=[];this.model=graphModel([],[]);this.view={x:32,y:40,scale:1};
     this.generation=0;this.failed=false;this.loading=false;this.error=null;this.resetKey="";this.snapshot="";
     this.themeSubscription=host.onTheme((theme)=>this.applyTheme(theme));this.applyTheme({"color-mode":getComputedStyle(document.documentElement).getPropertyValue("--xsec-color-mode").trim()});
   }
   applyTheme(theme){document.documentElement.dataset.xsecTheme=theme?.["color-mode"]==="light"?"light":"dark";}
-  async mount(root,context){this.root=root;this.buildShell();await this.update(context);console.info("attack-path.mounted",{hasAssignment:Boolean(this.context.assignmentId),mode:this.context.mode,dock:this.context.dock});this.timer=window.setInterval(()=>void this.load(),POLL_INTERVAL_MS);}
+  async mount(root,context){this.root=root;this.buildShell();await this.update(context);console.info("attack-path.mounted",{hasAssignment:Boolean(this.context.assignmentId),mode:this.context.mode,dock:this.context.dock});this.timer=window.setInterval(()=>void this.refresh(this),POLL_INTERVAL_MS);}
   async update(context){
     const next=workspaceContext(context),changed=next.assignmentId!==this.context.assignmentId,visibilityChanged=next.visible!==this.context.visible;
     this.context=next;this.root.dataset.xsecSurface=`${next.mode}:${next.dock}`;
     if(changed||visibilityChanged)console.info("attack-path.context.changed",{hasAssignment:Boolean(next.assignmentId),visible:next.visible,mode:next.mode,dock:next.dock});
     if(changed)this.resetReadState();else if(visibilityChanged)this.cancelLoad();this.render();
-    if(next.visible&&next.assignmentId)await this.load();
   }
   async dispose(){console.debug("attack-path.disposed");this.disposed=true;this.generation++;window.clearInterval(this.timer);this.resizeObserver?.disconnect();this.themeSubscription.dispose();this.root.replaceChildren();}
   cancelLoad(){this.generation++;this.loading=false;}
   resetReadState(){
     this.generation++;this.failed=false;this.loading=false;this.error=null;this.nodes=[];this.subagents=[];this.selectedSubagentId=null;this.resetKey="";this.snapshot="";this.showMessage();
-  }
-  async load(manual=false){
-    if(this.disposed||this.loading||!this.context.visible||!this.context.assignmentId||(this.failed&&!manual))return;
-    this.loading=true;this.failed=false;this.error=null;const request=++this.generation;this.render();
-    try{
-      const[tree,subagents]=await Promise.all([this.host.request(TREE_METHOD,{}),this.host.request(SUBAGENTS_METHOD,{})]);
-      if(this.disposed||request!==this.generation)return;this.nodes=responseRows(tree,"nodes");this.subagents=responseRows(subagents,"subagents");this.recordSnapshot();this.showMessage();
-    }catch(error){
-      if(this.disposed||request!==this.generation)return;this.nodes=[];this.subagents=[];this.snapshot="";this.failed=true;this.error=error instanceof Error?error.message:String(error);console.error("attack-path.load.failed",{message:this.error});this.showMessage(this.error,true);
-    }finally{if(request===this.generation&&!this.disposed){this.loading=false;this.render();}}
   }
   recordSnapshot(){const next=`${this.nodes.length}:${this.subagents.length}`;if(next===this.snapshot)return;this.snapshot=next;console.info("attack-path.snapshot.updated",{nodeCount:this.nodes.length,subagentCount:this.subagents.length});}
   buildShell(){
@@ -101,7 +94,7 @@ class AttackPathController{
     header.append(element("span","ap-title","攻击路径"),this.status,this.retry,this.legend,controls);this.canvas=element("div","ap-canvas");this.installCanvasEvents();shell.append(header,this.canvas);this.root.replaceChildren(shell);
     this.resizeObserver=typeof ResizeObserver==="function"?new ResizeObserver(()=>this.applyTransform()):null;this.resizeObserver?.observe(this.canvas);
   }
-  retryLoad(){console.info("attack-path.retry.requested");void this.load(true);}
+  retryLoad(){console.info("attack-path.retry.requested");void this.refresh(this,true);}
   zoomButton(text,label,action){const button=element("button","",text);button.type="button";button.title=label;button.setAttribute("aria-label",label);button.addEventListener("click",action);if(text==="100%")this.zoomLabel=button;return button;}
   installCanvasEvents(){
     this.canvas.addEventListener("wheel",(event)=>this.onWheel(event),{passive:false});this.canvas.addEventListener("pointerdown",(event)=>this.startDrag(event));this.canvas.addEventListener("pointermove",(event)=>this.moveDrag(event));this.canvas.addEventListener("pointerup",(event)=>this.stopDrag(event));this.canvas.addEventListener("pointercancel",(event)=>this.stopDrag(event));
@@ -129,7 +122,7 @@ class AttackPathController{
   }
   async openSubagent(subagent,title){
     this.selectedSubagentId=subagent.id;this.renderGraph();console.info("attack-path.subagent.open.started");
-    try{await this.host.request(OPEN_TOOL_METHOD,{pluginId:SUBAGENT_PLUGIN_ID,toolId:SUBAGENT_DETAIL_TOOL_ID,entityId:subagent.id,title});console.info("attack-path.subagent.open.completed");if(!this.error)this.showMessage();}catch(error){const message=error instanceof Error?error.message:String(error);console.error("attack-path.subagent.open.failed",{message});if(!this.error)this.showMessage(`无法打开子 Agent：${message}`);}
+    try{await this.onOpen(subagent,title);console.info("attack-path.subagent.open.completed");if(!this.error)this.showMessage();}catch(error){const message=error instanceof Error?error.message:String(error);console.error("attack-path.subagent.open.failed",{message});if(!this.error)this.showMessage(`无法打开子 Agent：${message}`);}
   }
   showMessage(message,retry=false){this.status.textContent=message??"";this.status.title=message??"";this.status.classList.toggle("show",Boolean(message));this.retry.classList.toggle("hidden",!retry);}
   resetIfNeeded(){const key=`${this.context.assignmentId}:${this.model.rootId??""}:${this.nodes.length}`;if(key===this.resetKey)return this.applyTransform();this.resetKey=key;requestAnimationFrame(()=>this.resetView());}
@@ -140,13 +133,25 @@ class AttackPathController{
   startDrag(event){if(event.button!==0||event.target.closest(".ap-node"))return;this.canvas.setPointerCapture(event.pointerId);this.canvas.classList.add("dragging");this.drag={id:event.pointerId,x:event.clientX,y:event.clientY,view:{...this.view}};}
   moveDrag(event){if(!this.drag||this.drag.id!==event.pointerId)return;this.view={...this.drag.view,x:this.drag.view.x+event.clientX-this.drag.x,y:this.drag.view.y+event.clientY-this.drag.y};this.applyTransform();}
   stopDrag(event){if(!this.drag||this.drag.id!==event.pointerId)return;if(this.canvas.hasPointerCapture(event.pointerId))this.canvas.releasePointerCapture(event.pointerId);this.canvas.classList.remove("dragging");this.drag=null;}
-}
-export function activate(host){
-  console.debug("attack-path.activate",{apiVersion:host.apiVersion});
-  const controller=new AttackPathController(host);
+  }
+  async function refreshController(controller,manual=false){
+    if(controller.disposed||controller.loading||!controller.context.visible||!controller.context.assignmentId||(controller.failed&&!manual))return;
+    controller.loading=true;controller.failed=false;controller.error=null;const request=++controller.generation;controller.render();
+    try{
+      const[tree,subagents]=await Promise.all([host.request(TREE_METHOD,{}),host.request(SUBAGENTS_METHOD,{})]);
+      if(controller.disposed||request!==controller.generation)return;controller.nodes=responseRows(tree,"nodes");controller.subagents=responseRows(subagents,"subagents");controller.recordSnapshot();controller.showMessage();
+    }catch(error){
+      if(controller.disposed||request!==controller.generation)return;controller.nodes=[];controller.subagents=[];controller.snapshot="";controller.failed=true;controller.error=error instanceof Error?error.message:String(error);console.error("attack-path.load.failed",{message:controller.error});controller.showMessage(controller.error,true);
+    }finally{if(request===controller.generation&&!controller.disposed){controller.loading=false;controller.render();}}
+  }
+  async function openSubagent(subagent,title){
+    await host.request(OPEN_TOOL_METHOD,{pluginId:SUBAGENT_PLUGIN_ID,toolId:SUBAGENT_DETAIL_TOOL_ID,entityId:subagent.id,title});
+  }
+  const controller=new AttackPathController(refreshController);
+  controller.onOpen=openSubagent;
   return{
-    async mount(root,context){await controller.mount(root,context);},
-    async update(context){await controller.update(context);},
+    async mount(root,context){await controller.mount(root,context);await refreshController(controller);},
+    async update(context){await controller.update(context);await refreshController(controller);},
     async dispose(){await controller.dispose();},
   };
 }
