@@ -62,13 +62,23 @@ class JsonRpcError extends Error {
   }
 }
 
+function isJsonRpcId(value) {
+  return value === undefined || value === null || typeof value === "string" || typeof value === "number";
+}
+
 function isJsonRpcRequest(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value) && typeof value.method === "string";
+  return value !== null
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && value.jsonrpc === "2.0"
+    && typeof value.method === "string"
+    && isJsonRpcId(value.id);
 }
 
 function responseId(value) {
-  if (value === null || typeof value !== "object" || Array.isArray(value) || value.id === undefined) return null;
-  return value.id;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const { id } = value;
+  return id === null || typeof id === "string" || typeof id === "number" ? id : null;
 }
 
 async function hostCall(method, params, signal) {
