@@ -9,6 +9,13 @@ const tools = [
   ["attack_path_list", "List attack-path nodes"],
   ["attack_path_finding_add", "Attach a finding to an attack-path node"],
 ];
+const hostMethods = {
+  attack_path_node_create: "plugin.attack-path.node_create",
+  attack_path_node_update: "plugin.attack-path.node_update",
+  attack_path_node_get: "plugin.attack-path.node_get",
+  attack_path_list: "plugin.attack-path.tree_list",
+  attack_path_finding_add: "plugin.attack-path.finding_add",
+};
 const activeRequests = new Map();
 
 function response(id, result, error) {
@@ -86,7 +93,7 @@ async function dispatch(request) {
   const controller = new AbortController();
   activeRequests.set(String(request.id), controller);
   try {
-    const result = await hostCall(`xsec.attack-path.${name}`, args, controller.signal);
+    const result = await hostCall(hostMethods[name], args, controller.signal);
     const structuredContent = structuredContentFor(name, result);
     return { content: [{ type: "text", text: JSON.stringify(result ?? {}) }], structuredContent };
   } catch (error) {
