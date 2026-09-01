@@ -18,3 +18,9 @@ jobs:
         run: |
           test -f plugins/com.xsec.attack-path/plugin.json
           test -f plugins/com.xsec.attack-path/.codex-plugin/plugin.json
+
+  source-preflight:
+    needs: manifest
+    uses: tzf1003/xsec-plugins/.github/workflows/first-party-source-preflight.yml@main
+    with:
+      plugin_id: com.xsec.attack-path
