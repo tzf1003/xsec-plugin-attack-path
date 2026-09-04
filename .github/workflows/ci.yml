@@ -18,6 +18,8 @@ jobs:
         run: |
           test -f plugins/com.xsec.attack-path/plugin.json
           test -f plugins/com.xsec.attack-path/.codex-plugin/plugin.json
+      - name: Validate the schema v2 portable contract
+        run: node scripts/verify-portable-contract.mjs
 
   source-preflight:
     needs: manifest
