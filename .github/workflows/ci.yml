@@ -18,6 +18,9 @@ jobs:
         run: |
           test -f plugins/com.xsec.attack-path/plugin.json
           test -f plugins/com.xsec.attack-path/.codex-plugin/plugin.json
+      - name: Validate the schema v2 portable contract
+        run: |
+          node -e 'const fs=require("node:fs");const root=JSON.parse(fs.readFileSync("plugins/com.xsec.attack-path/plugin.json"));const catalog=JSON.parse(fs.readFileSync("plugins/com.xsec.attack-path/.codex-plugin/plugin.json"));const mcp=JSON.parse(fs.readFileSync("plugins/com.xsec.attack-path/mcp.json"));const ext=root.extensions?.["com.xsec.desktop"];if(root.version!=="2.0.0"||catalog.version!==root.version||ext?.schemaVersion!==2||Object.keys(ext.contributes?.agentTools??{}).length!==7||mcp.mcpServers?.["attack-path"]?.command!=="./bin/attack-path-mcp")process.exit(1);'
 
   source-preflight:
     needs: manifest
