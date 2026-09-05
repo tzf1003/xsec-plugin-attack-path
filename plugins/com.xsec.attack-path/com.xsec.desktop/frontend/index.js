@@ -16,6 +16,53 @@ const REFRESH_RETRY_BASE_MS = 750;
 const RESOURCE_UPDATE_STREAM = "xsec.attack-path.resource.updated";
 const SVG_NS = "http://www.w3.org/2000/svg";
 
+/** Pure refresh-after-load policy (durable dirty intent vs in-flight queue). */
+export function resolveRefreshAfterLoad({
+  succeeded,
+  refreshQueued,
+  refreshDirty,
+  refreshRetryAttempt,
+  maxRetries = MAX_REFRESH_RETRIES,
+  retryBaseMs = REFRESH_RETRY_BASE_MS,
+}) {
+  if (succeeded) {
+    const hadQueued = Boolean(refreshQueued);
+    return {
+      refreshQueued: false,
+      refreshDirty: hadQueued,
+      refreshRetryAttempt: 0,
+      action: hadQueued ? "reload" : "idle",
+      delay: 0,
+    };
+  }
+  const dirty = Boolean(refreshQueued || refreshDirty);
+  if (!dirty) {
+    return {
+      refreshQueued: false,
+      refreshDirty: false,
+      refreshRetryAttempt,
+      action: "idle",
+      delay: 0,
+    };
+  }
+  if (refreshRetryAttempt >= maxRetries) {
+    return {
+      refreshQueued: false,
+      refreshDirty: false,
+      refreshRetryAttempt: 0,
+      action: "give-up",
+      delay: 0,
+    };
+  }
+  return {
+    refreshQueued: false,
+    refreshDirty: true,
+    refreshRetryAttempt: refreshRetryAttempt + 1,
+    action: "schedule-retry",
+    delay: retryBaseMs * (2 ** refreshRetryAttempt),
+  };
+}
+
 export function layoutTreeNodes(nodes, rootId) {
   const positions = new Map();
   if (!nodes.length) return { positions, width: 0, height: 0 };
@@ -233,6 +280,7 @@ function createController(host) {
   let requestGeneration = 0;
   let resourceSubscription = null;
   let refreshQueued = false;
+  let refreshDirty = false;
   let refreshRetryTimer = null;
   let refreshRetryAttempt = 0;
   let resizeObserver = null;
@@ -414,18 +462,35 @@ function createController(host) {
       refreshRetryTimer = null;
     }
   };
-  const scheduleRefreshRetry = () => {
+  const scheduleRefreshRetry = (delay) => {
     if (disposed || refreshRetryTimer != null) return;
-    if (refreshRetryAttempt >= MAX_REFRESH_RETRIES) {
-      refreshRetryAttempt = 0;
-      return;
-    }
-    const delay = REFRESH_RETRY_BASE_MS * (2 ** refreshRetryAttempt);
-    refreshRetryAttempt += 1;
     refreshRetryTimer = setTimeout(() => {
       refreshRetryTimer = null;
       if (!disposed) requestRefresh();
     }, delay);
+  };
+  const applyRefreshAfterLoad = (succeeded) => {
+    const plan = resolveRefreshAfterLoad({
+      succeeded,
+      refreshQueued,
+      refreshDirty,
+      refreshRetryAttempt,
+    });
+    refreshQueued = plan.refreshQueued;
+    refreshDirty = plan.refreshDirty;
+    refreshRetryAttempt = plan.refreshRetryAttempt;
+    if (plan.action === "reload") {
+      clearRefreshRetry();
+      void load();
+      return;
+    }
+    if (plan.action === "schedule-retry") {
+      scheduleRefreshRetry(plan.delay);
+      return;
+    }
+    if (plan.action === "give-up" || plan.action === "idle") {
+      if (succeeded || plan.action === "give-up") clearRefreshRetry();
+    }
   };
 
   const load = async () => {
@@ -460,24 +525,13 @@ function createController(host) {
     } finally {
       if (generation === requestGeneration) {
         loading = false;
-        if (refreshQueued) {
-          refreshQueued = false;
-          // Replay immediately after success; on failure keep dirty intent via
-          // bounded exponential backoff instead of dropping mid-flight updates.
-          if (succeeded) {
-            refreshRetryAttempt = 0;
-            void load();
-          } else {
-            scheduleRefreshRetry();
-          }
-        } else if (succeeded) {
-          refreshRetryAttempt = 0;
-        }
+        applyRefreshAfterLoad(succeeded);
       }
     }
   };
 
   const requestRefresh = () => {
+    refreshDirty = true;
     if (loading) {
       refreshQueued = true;
       return;
@@ -563,6 +617,7 @@ function createController(host) {
       selectedSubagentId = null;
       resetKey = "";
       refreshQueued = false;
+      refreshDirty = false;
       clearRefreshRetry();
       refreshRetryAttempt = 0;
       renderOperations();
