@@ -48,3 +48,13 @@ requireContract(
 requireContract(sameEntries(agentTools, EXPECTED_AGENT_TOOLS), "agent tools must match the native sidecar contract");
 requireContract(server?.command === EXPECTED_COMMAND, "attack-path must use the packaged native sidecar");
 requireContract(server?.cwd === EXPECTED_CWD, "attack-path runtime data must stay outside the package");
+
+const frontendSource = await readFile(`${PLUGIN_ROOT}/com.xsec.desktop/frontend/index.js`, "utf8");
+requireContract(
+  /SUBAGENT_PLUGIN_ID\s*=\s*"com\.xsec\.workspace\.sub-agent"/.test(frontendSource),
+  "attack-path frontend must retain SUBAGENT_PLUGIN_ID contract constant",
+);
+requireContract(
+  /SUBAGENT_DETAIL_TOOL_ID\s*=\s*"subagent-detail"/.test(frontendSource),
+  "attack-path frontend must retain SUBAGENT_DETAIL_TOOL_ID contract constant",
+);
