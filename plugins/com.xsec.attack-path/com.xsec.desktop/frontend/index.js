@@ -408,6 +408,7 @@ function createController(host) {
     if (disposed || loading || !visible || !assignmentId) return;
     loading = true;
     const generation = ++requestGeneration;
+    let succeeded = false;
     if (!nodes.length) renderEmpty("正在读取攻击路径", "正在同步节点与子 Agent 状态…", true);
     try {
       const [treeResult, subagentResult, operationResult] = await Promise.all([
@@ -422,18 +423,25 @@ function createController(host) {
       showStatus(null);
       renderOperations();
       renderGraph();
+      succeeded = true;
     } catch (error) {
       if (disposed || generation !== requestGeneration) return;
       const message = error instanceof Error ? error.message : String(error);
       console.error("attack_path.load.failed", { message });
       showStatus(message);
       if (!nodes.length) renderEmpty("攻击路径暂时不可用", "读取插件数据失败，请检查会话或插件运行状态。");
+      // Rebuild resume controls so a prior successful resume + failed refresh
+      // does not leave recovery buttons permanently disabled.
+      if (operations.length > 0) renderOperations();
     } finally {
       if (generation !== requestGeneration) return;
       loading = false;
       if (refreshQueued) {
         refreshQueued = false;
-        void load();
+        // Only auto-replay a queued refresh after a successful load.
+        // On failure, clear the queue without replaying to avoid a retry storm
+        // when resource updates arrive during a failing request.
+        if (succeeded) void load();
       }
     }
   };
