@@ -34,6 +34,13 @@ export function resolveRefreshRetryTimerPolicy({ disposed, mode }) {
   return { clearPending: true, armTimer: true };
 }
 
+/** Start a replacement load only after cancelling its pending retry timer. */
+export function startImmediateRefresh({ disposed, clearPending, startLoad }) {
+  const policy = resolveRefreshRetryTimerPolicy({ disposed, mode: "immediate-load" });
+  if (policy.clearPending) clearPending();
+  if (!disposed) startLoad();
+}
+
 /** Pure refresh-after-load policy (durable dirty intent vs in-flight queue). */
 export function resolveRefreshAfterLoad({
   succeeded,
@@ -556,9 +563,11 @@ function createController(host) {
       refreshQueued = true;
       return;
     }
-    const policy = resolveRefreshRetryTimerPolicy({ disposed, mode: "immediate-load" });
-    if (policy.clearPending) clearRefreshRetry();
-    void load();
+    startImmediateRefresh({
+      disposed,
+      clearPending: clearRefreshRetry,
+      startLoad: () => void load(),
+    });
   };
 
   const buildShell = () => {
@@ -645,7 +654,7 @@ function createController(host) {
       renderOperations();
     }
     renderGraph();
-    if (visible) void load();
+    if (visible) requestRefresh();
   };
 
   return {

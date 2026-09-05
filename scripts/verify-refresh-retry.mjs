@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   resolveRefreshAfterLoad,
   resolveRefreshRetryTimerPolicy,
+  startImmediateRefresh,
 } from "../plugins/com.xsec.attack-path/com.xsec.desktop/frontend/index.js";
 
 const MAX = 3;
@@ -162,4 +163,24 @@ test("pending retry interrupted by resource update then failed load replaces old
   const replace = resolveRefreshRetryTimerPolicy({ disposed: false, mode: "schedule" });
   assert.equal(replace.clearPending, true, "must clear stale pending timer before re-arm");
   assert.equal(replace.armTimer, true, "must arm timer with newly calculated delay");
+});
+
+test("same-assignment context refresh cancels a pending retry before loading", async () => {
+  let retryFired = false;
+  let loadStarted = false;
+  const pendingRetry = setTimeout(() => {
+    retryFired = true;
+  }, 5);
+
+  startImmediateRefresh({
+    disposed: false,
+    clearPending: () => clearTimeout(pendingRetry),
+    startLoad: () => {
+      loadStarted = true;
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 15));
+
+  assert.equal(loadStarted, true);
+  assert.equal(retryFired, false);
 });
