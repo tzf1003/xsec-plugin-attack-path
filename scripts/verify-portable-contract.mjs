@@ -51,18 +51,22 @@ requireContract(server?.cwd === EXPECTED_CWD, "attack-path runtime data must sta
 
 const frontendSource = await readFile(`${PLUGIN_ROOT}/com.xsec.desktop/frontend/index.js`, "utf8");
 requireContract(
-  /SUBAGENT_PLUGIN_ID="com\.xsec\.workspace\.sub-agent"/.test(frontendSource),
-  "attack-path frontend must retain SUBAGENT_PLUGIN_ID contract constant (gate-exact, no spaces around =)",
+  /^const\s+SUBAGENT_PLUGIN_ID\s*=\s*"com\.xsec\.workspace\.sub-agent";$/m.test(frontendSource),
+  "attack-path frontend must declare the SUBAGENT_PLUGIN_ID contract constant",
 );
 requireContract(
-  /SUBAGENT_DETAIL_TOOL_ID="subagent-detail"/.test(frontendSource),
-  "attack-path frontend must retain SUBAGENT_DETAIL_TOOL_ID contract constant (gate-exact, no spaces around =)",
+  /^const\s+SUBAGENT_DETAIL_TOOL_ID\s*=\s*"subagent-detail";$/m.test(frontendSource),
+  "attack-path frontend must declare the SUBAGENT_DETAIL_TOOL_ID contract constant",
 );
+const openSubagentSource = frontendSource.match(
+  /^  const openSubagent = async \(subagent, title, button\) => \{[\s\S]*?^  \};$/m,
+)?.[0];
+requireContract(typeof openSubagentSource === "string", "attack-path frontend must define openSubagent");
 requireContract(
-  /pluginId:\s*SUBAGENT_PLUGIN_ID/.test(frontendSource),
+  /pluginId:\s*SUBAGENT_PLUGIN_ID/.test(openSubagentSource),
   "attack-path openSubagent must pass pluginId: SUBAGENT_PLUGIN_ID",
 );
 requireContract(
-  /toolId:\s*SUBAGENT_DETAIL_TOOL_ID/.test(frontendSource),
+  /toolId:\s*SUBAGENT_DETAIL_TOOL_ID/.test(openSubagentSource),
   "attack-path openSubagent must pass toolId: SUBAGENT_DETAIL_TOOL_ID",
 );
