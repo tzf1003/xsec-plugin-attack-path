@@ -11,8 +11,75 @@ const ROOT_GAP = 80;
 const PADDING = 80;
 const MIN_SCALE = 0.45;
 const MAX_SCALE = 1.8;
+const MAX_REFRESH_RETRIES = 3;
+const REFRESH_RETRY_BASE_MS = 750;
 const RESOURCE_UPDATE_STREAM = "xsec.attack-path.resource.updated";
 const SVG_NS = "http://www.w3.org/2000/svg";
+
+/**
+ * Pure refresh-retry timer policy: a newer schedule always replaces any pending
+ * timer so exponential backoff is honored after an interrupting refresh/load.
+ * @param {{ disposed: boolean, mode: "schedule" | "immediate-load" }} input
+ * @returns {{ clearPending: boolean, armTimer: boolean }}
+ */
+export function resolveRefreshRetryTimerPolicy({ disposed, mode }) {
+  if (disposed) {
+    return { clearPending: false, armTimer: false };
+  }
+  if (mode === "immediate-load") {
+    // Immediate refresh supersedes any delayed retry.
+    return { clearPending: true, armTimer: false };
+  }
+  // mode === "schedule": clear then arm with the newly calculated delay.
+  return { clearPending: true, armTimer: true };
+}
+
+/** Pure refresh-after-load policy (durable dirty intent vs in-flight queue). */
+export function resolveRefreshAfterLoad({
+  succeeded,
+  refreshQueued,
+  refreshDirty,
+  refreshRetryAttempt,
+  maxRetries = MAX_REFRESH_RETRIES,
+  retryBaseMs = REFRESH_RETRY_BASE_MS,
+}) {
+  if (succeeded) {
+    const hadQueued = Boolean(refreshQueued);
+    return {
+      refreshQueued: false,
+      refreshDirty: hadQueued,
+      refreshRetryAttempt: 0,
+      action: hadQueued ? "reload" : "idle",
+      delay: 0,
+    };
+  }
+  const dirty = Boolean(refreshQueued || refreshDirty);
+  if (!dirty) {
+    return {
+      refreshQueued: false,
+      refreshDirty: false,
+      refreshRetryAttempt,
+      action: "idle",
+      delay: 0,
+    };
+  }
+  if (refreshRetryAttempt >= maxRetries) {
+    return {
+      refreshQueued: false,
+      refreshDirty: false,
+      refreshRetryAttempt: 0,
+      action: "give-up",
+      delay: 0,
+    };
+  }
+  return {
+    refreshQueued: false,
+    refreshDirty: true,
+    refreshRetryAttempt: refreshRetryAttempt + 1,
+    action: "schedule-retry",
+    delay: retryBaseMs * (2 ** refreshRetryAttempt),
+  };
+}
 
 export function layoutTreeNodes(nodes, rootId) {
   const positions = new Map();
@@ -231,6 +298,9 @@ function createController(host) {
   let requestGeneration = 0;
   let resourceSubscription = null;
   let refreshQueued = false;
+  let refreshDirty = false;
+  let refreshRetryTimer = null;
+  let refreshRetryAttempt = 0;
   let resizeObserver = null;
   let nodes = [];
   let subagents = [];
@@ -404,10 +474,50 @@ function createController(host) {
     }
   };
 
+  const clearRefreshRetry = () => {
+    if (refreshRetryTimer != null) {
+      clearTimeout(refreshRetryTimer);
+      refreshRetryTimer = null;
+    }
+  };
+  const scheduleRefreshRetry = (delay) => {
+    const policy = resolveRefreshRetryTimerPolicy({ disposed, mode: "schedule" });
+    if (!policy.armTimer) return;
+    if (policy.clearPending) clearRefreshRetry();
+    refreshRetryTimer = setTimeout(() => {
+      refreshRetryTimer = null;
+      if (!disposed) requestRefresh();
+    }, delay);
+  };
+  const applyRefreshAfterLoad = (succeeded) => {
+    const plan = resolveRefreshAfterLoad({
+      succeeded,
+      refreshQueued,
+      refreshDirty,
+      refreshRetryAttempt,
+    });
+    refreshQueued = plan.refreshQueued;
+    refreshDirty = plan.refreshDirty;
+    refreshRetryAttempt = plan.refreshRetryAttempt;
+    if (plan.action === "reload") {
+      clearRefreshRetry();
+      void load();
+      return;
+    }
+    if (plan.action === "schedule-retry") {
+      scheduleRefreshRetry(plan.delay);
+      return;
+    }
+    if (plan.action === "give-up" || plan.action === "idle") {
+      if (succeeded || plan.action === "give-up") clearRefreshRetry();
+    }
+  };
+
   const load = async () => {
     if (disposed || loading || !visible || !assignmentId) return;
     loading = true;
     const generation = ++requestGeneration;
+    let succeeded = false;
     if (!nodes.length) renderEmpty("正在读取攻击路径", "正在同步节点与子 Agent 状态…", true);
     try {
       const [treeResult, subagentResult, operationResult] = await Promise.all([
@@ -422,27 +532,32 @@ function createController(host) {
       showStatus(null);
       renderOperations();
       renderGraph();
+      succeeded = true;
     } catch (error) {
       if (disposed || generation !== requestGeneration) return;
       const message = error instanceof Error ? error.message : String(error);
       console.error("attack_path.load.failed", { message });
       showStatus(message);
       if (!nodes.length) renderEmpty("攻击路径暂时不可用", "读取插件数据失败，请检查会话或插件运行状态。");
+      // Rebuild resume controls so a prior successful resume + failed refresh
+      // does not leave recovery buttons permanently disabled.
+      if (operations.length > 0) renderOperations();
     } finally {
-      if (generation !== requestGeneration) return;
-      loading = false;
-      if (refreshQueued) {
-        refreshQueued = false;
-        void load();
+      if (generation === requestGeneration) {
+        loading = false;
+        applyRefreshAfterLoad(succeeded);
       }
     }
   };
 
   const requestRefresh = () => {
+    refreshDirty = true;
     if (loading) {
       refreshQueued = true;
       return;
     }
+    const policy = resolveRefreshRetryTimerPolicy({ disposed, mode: "immediate-load" });
+    if (policy.clearPending) clearRefreshRetry();
     void load();
   };
 
@@ -524,6 +639,9 @@ function createController(host) {
       selectedSubagentId = null;
       resetKey = "";
       refreshQueued = false;
+      refreshDirty = false;
+      clearRefreshRetry();
+      refreshRetryAttempt = 0;
       renderOperations();
     }
     renderGraph();
@@ -550,6 +668,7 @@ function createController(host) {
     async dispose() {
       disposed = true;
       requestGeneration += 1;
+      clearRefreshRetry();
       resourceSubscription?.dispose();
       resizeObserver?.disconnect();
       themeSubscription.dispose();
