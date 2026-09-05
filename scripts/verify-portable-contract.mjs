@@ -12,7 +12,7 @@ const EXPECTED_AGENT_TOOLS = [
   "attack-path-node-update",
 ];
 const EXPECTED_DEPENDENCY = "^1.2.3";
-const EXPECTED_ACTIVATION = "onAgentTool:attack-path-node-create";
+const EXPECTED_ACTIVATION = "onAgentTool:attack_path_node_create";
 const EXPECTED_COMMAND = "./bin/attack-path-mcp";
 const EXPECTED_CWD = "${PLUGIN_DATA}";
 
