@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   resolveRefreshAfterLoad,
+  resolveRefreshRetryTimerPolicy,
 } from "../plugins/com.xsec.attack-path/com.xsec.desktop/frontend/index.js";
 
 const MAX = 3;
@@ -93,4 +94,72 @@ test("success clears dirty intent; queued success reloads with dirty retained", 
   assert.equal(reload.action, "reload");
   assert.equal(reload.refreshDirty, true);
   assert.equal(reload.refreshRetryAttempt, 0);
+});
+
+test("timer policy: disposed is a noop", () => {
+  assert.deepEqual(
+    resolveRefreshRetryTimerPolicy({ disposed: true, mode: "schedule" }),
+    { clearPending: false, armTimer: false },
+  );
+  assert.deepEqual(
+    resolveRefreshRetryTimerPolicy({ disposed: true, mode: "immediate-load" }),
+    { clearPending: false, armTimer: false },
+  );
+});
+
+test("timer policy: newer schedule always replaces pending timer", () => {
+  const policy = resolveRefreshRetryTimerPolicy({ disposed: false, mode: "schedule" });
+  assert.equal(policy.clearPending, true);
+  assert.equal(policy.armTimer, true);
+});
+
+test("timer policy: immediate load clears pending retry without arming", () => {
+  const policy = resolveRefreshRetryTimerPolicy({ disposed: false, mode: "immediate-load" });
+  assert.equal(policy.clearPending, true);
+  assert.equal(policy.armTimer, false);
+});
+
+test("pending retry interrupted by resource update then failed load replaces old delay", () => {
+  // Simulate: first failure armed attempt=1 delay=BASE (pending timer).
+  let state = {
+    refreshQueued: false,
+    refreshDirty: true,
+    refreshRetryAttempt: 0,
+  };
+  const first = resolveRefreshAfterLoad({
+    succeeded: false,
+    ...state,
+    maxRetries: MAX,
+    retryBaseMs: BASE,
+  });
+  assert.equal(first.action, "schedule-retry");
+  assert.equal(first.delay, BASE);
+  state = {
+    refreshQueued: first.refreshQueued,
+    refreshDirty: first.refreshDirty,
+    refreshRetryAttempt: first.refreshRetryAttempt,
+  };
+
+  // Resource update / manual refresh starts an immediate load: supersede pending timer.
+  const interrupt = resolveRefreshRetryTimerPolicy({ disposed: false, mode: "immediate-load" });
+  assert.equal(interrupt.clearPending, true, "must clear old pending retry timer");
+  assert.equal(interrupt.armTimer, false);
+
+  // That interrupting load fails: schedule with the next exponential delay.
+  const afterFail = resolveRefreshAfterLoad({
+    succeeded: false,
+    refreshQueued: false,
+    refreshDirty: true,
+    refreshRetryAttempt: state.refreshRetryAttempt,
+    maxRetries: MAX,
+    retryBaseMs: BASE,
+  });
+  assert.equal(afterFail.action, "schedule-retry");
+  assert.equal(afterFail.refreshRetryAttempt, 2);
+  assert.equal(afterFail.delay, BASE * 2);
+
+  // Newer schedule must replace (not keep) the old timer.
+  const replace = resolveRefreshRetryTimerPolicy({ disposed: false, mode: "schedule" });
+  assert.equal(replace.clearPending, true, "must clear stale pending timer before re-arm");
+  assert.equal(replace.armTimer, true, "must arm timer with newly calculated delay");
 });

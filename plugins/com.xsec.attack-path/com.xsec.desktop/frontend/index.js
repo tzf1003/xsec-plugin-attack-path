@@ -16,6 +16,24 @@ const REFRESH_RETRY_BASE_MS = 750;
 const RESOURCE_UPDATE_STREAM = "xsec.attack-path.resource.updated";
 const SVG_NS = "http://www.w3.org/2000/svg";
 
+/**
+ * Pure refresh-retry timer policy: a newer schedule always replaces any pending
+ * timer so exponential backoff is honored after an interrupting refresh/load.
+ * @param {{ disposed: boolean, mode: "schedule" | "immediate-load" }} input
+ * @returns {{ clearPending: boolean, armTimer: boolean }}
+ */
+export function resolveRefreshRetryTimerPolicy({ disposed, mode }) {
+  if (disposed) {
+    return { clearPending: false, armTimer: false };
+  }
+  if (mode === "immediate-load") {
+    // Immediate refresh supersedes any delayed retry.
+    return { clearPending: true, armTimer: false };
+  }
+  // mode === "schedule": clear then arm with the newly calculated delay.
+  return { clearPending: true, armTimer: true };
+}
+
 /** Pure refresh-after-load policy (durable dirty intent vs in-flight queue). */
 export function resolveRefreshAfterLoad({
   succeeded,
@@ -463,7 +481,9 @@ function createController(host) {
     }
   };
   const scheduleRefreshRetry = (delay) => {
-    if (disposed || refreshRetryTimer != null) return;
+    const policy = resolveRefreshRetryTimerPolicy({ disposed, mode: "schedule" });
+    if (!policy.armTimer) return;
+    if (policy.clearPending) clearRefreshRetry();
     refreshRetryTimer = setTimeout(() => {
       refreshRetryTimer = null;
       if (!disposed) requestRefresh();
@@ -536,6 +556,8 @@ function createController(host) {
       refreshQueued = true;
       return;
     }
+    const policy = resolveRefreshRetryTimerPolicy({ disposed, mode: "immediate-load" });
+    if (policy.clearPending) clearRefreshRetry();
     void load();
   };
 
