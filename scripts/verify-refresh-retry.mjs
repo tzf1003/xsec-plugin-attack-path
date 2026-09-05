@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   resolveRefreshAfterLoad,
   resolveRefreshRetryTimerPolicy,
+  shouldRefreshForContext,
   startImmediateRefresh,
 } from "../plugins/com.xsec.attack-path/com.xsec.desktop/frontend/index.js";
 
@@ -165,7 +166,7 @@ test("pending retry interrupted by resource update then failed load replaces old
   assert.equal(replace.armTimer, true, "must arm timer with newly calculated delay");
 });
 
-test("same-assignment context refresh cancels a pending retry before loading", async () => {
+test("immediate resource refresh cancels a pending retry before loading", async () => {
   let retryFired = false;
   let loadStarted = false;
   const pendingRetry = setTimeout(() => {
@@ -183,4 +184,27 @@ test("same-assignment context refresh cancels a pending retry before loading", a
 
   assert.equal(loadStarted, true);
   assert.equal(retryFired, false);
+});
+
+test("context refresh runs only for assignment or visibility transitions", () => {
+  assert.equal(shouldRefreshForContext({
+    visible: true,
+    assignmentChanged: true,
+    becameVisible: false,
+  }), true);
+  assert.equal(shouldRefreshForContext({
+    visible: true,
+    assignmentChanged: false,
+    becameVisible: true,
+  }), true);
+  assert.equal(shouldRefreshForContext({
+    visible: true,
+    assignmentChanged: false,
+    becameVisible: false,
+  }), false);
+  assert.equal(shouldRefreshForContext({
+    visible: false,
+    assignmentChanged: true,
+    becameVisible: false,
+  }), false);
 });
