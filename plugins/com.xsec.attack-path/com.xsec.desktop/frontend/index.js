@@ -11,6 +11,8 @@ const ROOT_GAP = 80;
 const PADDING = 80;
 const MIN_SCALE = 0.45;
 const MAX_SCALE = 1.8;
+const MAX_REFRESH_RETRIES = 3;
+const REFRESH_RETRY_BASE_MS = 750;
 const RESOURCE_UPDATE_STREAM = "xsec.attack-path.resource.updated";
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -231,6 +233,8 @@ function createController(host) {
   let requestGeneration = 0;
   let resourceSubscription = null;
   let refreshQueued = false;
+  let refreshRetryTimer = null;
+  let refreshRetryAttempt = 0;
   let resizeObserver = null;
   let nodes = [];
   let subagents = [];
@@ -404,6 +408,26 @@ function createController(host) {
     }
   };
 
+  const clearRefreshRetry = () => {
+    if (refreshRetryTimer != null) {
+      clearTimeout(refreshRetryTimer);
+      refreshRetryTimer = null;
+    }
+  };
+  const scheduleRefreshRetry = () => {
+    if (disposed || refreshRetryTimer != null) return;
+    if (refreshRetryAttempt >= MAX_REFRESH_RETRIES) {
+      refreshRetryAttempt = 0;
+      return;
+    }
+    const delay = REFRESH_RETRY_BASE_MS * (2 ** refreshRetryAttempt);
+    refreshRetryAttempt += 1;
+    refreshRetryTimer = setTimeout(() => {
+      refreshRetryTimer = null;
+      if (!disposed) requestRefresh();
+    }, delay);
+  };
+
   const load = async () => {
     if (disposed || loading || !visible || !assignmentId) return;
     loading = true;
@@ -434,14 +458,21 @@ function createController(host) {
       // does not leave recovery buttons permanently disabled.
       if (operations.length > 0) renderOperations();
     } finally {
-      if (generation !== requestGeneration) return;
-      loading = false;
-      if (refreshQueued) {
-        refreshQueued = false;
-        // Only auto-replay a queued refresh after a successful load.
-        // On failure, clear the queue without replaying to avoid a retry storm
-        // when resource updates arrive during a failing request.
-        if (succeeded) void load();
+      if (generation === requestGeneration) {
+        loading = false;
+        if (refreshQueued) {
+          refreshQueued = false;
+          // Replay immediately after success; on failure keep dirty intent via
+          // bounded exponential backoff instead of dropping mid-flight updates.
+          if (succeeded) {
+            refreshRetryAttempt = 0;
+            void load();
+          } else {
+            scheduleRefreshRetry();
+          }
+        } else if (succeeded) {
+          refreshRetryAttempt = 0;
+        }
       }
     }
   };
@@ -532,6 +563,8 @@ function createController(host) {
       selectedSubagentId = null;
       resetKey = "";
       refreshQueued = false;
+      clearRefreshRetry();
+      refreshRetryAttempt = 0;
       renderOperations();
     }
     renderGraph();
@@ -558,6 +591,7 @@ function createController(host) {
     async dispose() {
       disposed = true;
       requestGeneration += 1;
+      clearRefreshRetry();
       resourceSubscription?.dispose();
       resizeObserver?.disconnect();
       themeSubscription.dispose();
