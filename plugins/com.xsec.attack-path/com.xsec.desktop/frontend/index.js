@@ -3,6 +3,8 @@ const SUBAGENTS_METHOD = "xsec.attack-path.subagents.list";
 const OPERATIONS_METHOD = "xsec.attack-path.operations.list";
 const RESUME_OPERATION_METHOD = "xsec.attack-path.operations.resume";
 const OPEN_TOOL_METHOD = "xsec.workspace.tool.open";
+const SUBAGENT_PLUGIN_ID = "com.xsec.workspace.sub-agent";
+const SUBAGENT_DETAIL_TOOL_ID = "subagent-detail";
 const NODE_WIDTH = 130;
 const NODE_HEIGHT = 58;
 const X_GAP = 150;
@@ -377,8 +379,8 @@ function createController(host) {
     button.setAttribute("aria-pressed", "true");
     try {
       await host.request(OPEN_TOOL_METHOD, {
-        pluginId: "com.xsec.workspace.sub-agent",
-        toolId: "subagent-detail",
+        pluginId: SUBAGENT_PLUGIN_ID,
+        toolId: SUBAGENT_DETAIL_TOOL_ID,
         entityId: subagent.id,
         title: title || subagent.role || "子 Agent 详情",
       });
