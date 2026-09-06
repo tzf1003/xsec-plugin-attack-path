@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 
 const ATTACK_PATH_PLUGIN = "com.xsec.attack-path";
-const PLUGIN_ROOT = `plugins/${ATTACK_PATH_PLUGIN}`;
+const PLUGIN_ROOT = ".";
 const EXPECTED_AGENT_TOOLS = [
   "attack-path-finding-add",
   "attack-path-findings-list",

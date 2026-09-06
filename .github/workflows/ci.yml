@@ -16,8 +16,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Require the dual plugin manifests
         run: |
-          test -f plugins/com.xsec.attack-path/plugin.json
-          test -f plugins/com.xsec.attack-path/.codex-plugin/plugin.json
+          test -f plugin.json
+          test -f .codex-plugin/plugin.json
       - name: Validate the schema v2 portable contract
         run: node scripts/verify-portable-contract.mjs
       - name: Verify refresh retry lifecycle
