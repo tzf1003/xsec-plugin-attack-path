@@ -5,7 +5,7 @@ import {
   resolveRefreshRetryTimerPolicy,
   shouldRefreshForContext,
   startImmediateRefresh,
-} from "../plugins/com.xsec.attack-path/com.xsec.desktop/frontend/index.js";
+} from "../com.xsec.desktop/frontend/index.js";
 
 const MAX = 3;
 const BASE = 750;
