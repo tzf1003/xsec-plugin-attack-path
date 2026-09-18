@@ -4,6 +4,7 @@ const ATTACK_PATH_PLUGIN = "com.xsec.attack-path";
 const PLUGIN_ROOT = ".";
 const EXPECTED_AGENT_TOOLS = [
   "attack-path-finding-add",
+  "attack-path-finding-delete",
   "attack-path-findings-list",
   "attack-path-list",
   "attack-path-node-create",
