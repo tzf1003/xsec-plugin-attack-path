@@ -14,9 +14,13 @@ only when it represents a concrete next step or confirmed observation. Use
 conclusion. Read a single node with `attack_path_node_get` before an update
 when the current state matters.
 
-Pass the top-level `revision` returned by `attack_path_node_get` or
-`attack_path_list` as `expectedRevision` for update/delete; do not use a
-node's `updatedAt` timestamp.
+For `attack_path_node_update` / `attack_path_node_delete`, pass the node's
+`revision` from the node object returned by get/list as `expectedRevision`.
+Do not use the response envelope's top-level `revision` (that is the
+scope/resource revision for `resources/updated`). Prefer the `revision`
+field name over `updatedAt` for the portable contract; they are the same
+CAS token today. `attack_path_finding_delete` only needs `fingerprint` (no
+`expectedRevision`).
 
 `kind` is an open classification string. State-like fields such as `status`,
 `testValue`, and `severity` use the finite values advertised by `tools/list`.
